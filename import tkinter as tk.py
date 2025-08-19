@@ -12,8 +12,9 @@ RED_PIECE = "#FF0000"
 BLACK_PIECE = "#000000"
 
 class Checkers:
-    def __init__(self, root):
+    def __init__(self, root, mode="AI"):
         self.root = root
+        self.mode = mode  # "AI" or "2P"
         self.root.title("Checkers")
         self.turn = 'red'
         self.selected_piece = None
@@ -60,7 +61,7 @@ class Checkers:
         elif piece:
             piece_color = self.canvas.itemcget(piece, "fill")
             if (self.turn == 'red' and piece_color == RED_PIECE) or \
-               (self.turn == 'black' and piece_color == BLACK_PIECE):
+               (self.mode == "2P" and self.turn == 'black' and piece_color == BLACK_PIECE):
                 self.selected_piece = (row, col)
 
     def move_piece(self, row, col):
@@ -89,7 +90,7 @@ class Checkers:
             else:
                 self.selected_piece = None
                 self.turn = 'black' if self.turn == 'red' else 'red'
-                if self.turn == 'black':
+                if self.mode == "AI" and self.turn == 'black':
                     self.root.after(500, self.ai_move)  # AI moves after 0.5s
             return True
         return False
@@ -164,7 +165,30 @@ class Checkers:
         # No valid moves? pass turn
         self.turn = 'red'
 
-if __name__ == "__main__":
+
+def main_menu():
     root = tk.Tk()
-    game = Checkers(root)
+    root.title("Checkers Menu")
+    root.geometry("300x200")
+
+    def start_ai():
+        root.destroy()
+        game_root = tk.Tk()
+        Checkers(game_root, mode="AI")
+        game_root.mainloop()
+
+    def start_2p():
+        root.destroy()
+        game_root = tk.Tk()
+        Checkers(game_root, mode="2P")
+        game_root.mainloop()
+
+    tk.Label(root, text="Select Game Mode", font=("Arial", 16)).pack(pady=20)
+    tk.Button(root, text="Play vs AI", command=start_ai, width=15).pack(pady=10)
+    tk.Button(root, text="2 Player", command=start_2p, width=15).pack(pady=10)
+
     root.mainloop()
+
+
+if __name__ == "__main__":
+    main_menu()
