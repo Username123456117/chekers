@@ -54,7 +54,8 @@ class Checkers:
         piece = self.board[row][col]
 
         if self.selected_piece:
-            self.move_piece(row, col)
+            if self.move_piece(row, col):
+                return
         elif piece:
             piece_color = self.canvas.itemcget(piece, "fill")
             if (self.turn == 'red' and piece_color == RED_PIECE) or \
@@ -66,26 +67,69 @@ class Checkers:
         piece = self.board[src_row][src_col]
 
         if self.valid_move(src_row, src_col, row, col):
-            self.canvas.move(piece, (col - src_col)*SQUARE_SIZE, (row - src_row)*SQUARE_SIZE)
+            # Check for a jump
+            dr = row - src_row
+            dc = col - src_col
+            if abs(dr) == 2 and abs(dc) == 2:
+                mid_row = src_row + dr // 2
+                mid_col = src_col + dc // 2
+                captured_piece = self.board[mid_row][mid_col]
+                self.canvas.delete(captured_piece)
+                self.board[mid_row][mid_col] = None
+
+            # Move piece
+            self.canvas.move(piece, dc*SQUARE_SIZE, dr*SQUARE_SIZE)
             self.board[row][col] = piece
             self.board[src_row][src_col] = None
-            self.turn = 'black' if self.turn == 'red' else 'red'
 
-        self.selected_piece = None
+            # Check for additional jump
+            if abs(dr) == 2 and self.can_jump(row, col):
+                self.selected_piece = (row, col)  # Keep piece selected for chain jump
+            else:
+                self.selected_piece = None
+                self.turn = 'black' if self.turn == 'red' else 'red'
+            return True
+        return False
 
     def valid_move(self, src_row, src_col, dest_row, dest_col):
-        # Only basic moves: diagonal by 1, no jumps yet
         if self.board[dest_row][dest_col] is not None:
             return False
         dr = dest_row - src_row
-        dc = abs(dest_col - src_col)
+        dc = dest_col - src_col
         piece_color = self.canvas.itemcget(self.board[src_row][src_col], "fill")
-        if dc == 1:
+
+        # Simple diagonal move
+        if abs(dr) == 1 and abs(dc) == 1:
             if piece_color == RED_PIECE and dr == -1:
                 return True
             if piece_color == BLACK_PIECE and dr == 1:
                 return True
+            return False
+
+        # Jump over opponent
+        if abs(dr) == 2 and abs(dc) == 2:
+            mid_row = src_row + dr // 2
+            mid_col = src_col + dc // 2
+            mid_piece = self.board[mid_row][mid_col]
+            if mid_piece is None:
+                return False
+            mid_color = self.canvas.itemcget(mid_piece, "fill")
+            if piece_color == RED_PIECE and mid_color == BLACK_PIECE:
+                return True
+            if piece_color == BLACK_PIECE and mid_color == RED_PIECE:
+                return True
         return False
+
+    def can_jump(self, row, col):
+        directions = [(-2, -2), (-2, 2), (2, -2), (2, 2)]
+        for dr, dc in directions:
+            new_row = row + dr
+            new_col = col + dc
+            if 0 <= new_row < ROWS and 0 <= new_col < COLS:
+                if self.valid_move(row, col, new_row, new_col):
+                    return True
+        return False
+
 
 if __name__ == "__main__":
     root = tk.Tk()
