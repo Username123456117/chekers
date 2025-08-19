@@ -10,6 +10,7 @@ LIGHT_SQUARE = "#EEEED2"
 DARK_SQUARE = "#769656"
 RED_PIECE = "#FF0000"
 BLACK_PIECE = "#000000"
+KING_OUTLINE = "#FFD700"  # gold outline for kings
 
 class Checkers:
     def __init__(self, root, mode="AI", difficulty="Easy",
@@ -24,6 +25,7 @@ class Checkers:
         self.turn = 'red'
         self.selected_piece = None
         self.board = [[None for _ in range(COLS)] for _ in range(ROWS)]
+        self.piece_info = {}  # Track color and king status
         self.canvas = tk.Canvas(root, width=COLS*SQUARE_SIZE, height=ROWS*SQUARE_SIZE)
         self.canvas.pack()
         self.draw_board()
@@ -52,34 +54,30 @@ class Checkers:
         y1 = row * SQUARE_SIZE + 10
         x2 = x1 + SQUARE_SIZE - 20
         y2 = y1 + SQUARE_SIZE - 20
-        piece = self.canvas.create_oval(x1, y1, x2, y2, fill=color)
+        piece = self.canvas.create_oval(x1, y1, x2, y2, fill=color, width=2)
         self.board[row][col] = piece
+        self.piece_info[piece] = {"color": color, "king": False}
 
     def click(self, event):
         col = event.x // SQUARE_SIZE
         row = event.y // SQUARE_SIZE
         piece = self.board[row][col]
 
+        # Determine pieces that must jump if mandatory jump is on
         jump_pieces = []
         if self.mandatory_jump:
             for r in range(ROWS):
                 for c in range(COLS):
                     p = self.board[r][c]
-                    if p:
-                        color = self.canvas.itemcget(p, "fill")
-                        if ((self.turn == "red" and color == RED_PIECE) or
-                            (self.turn == "black" and color == BLACK_PIECE)):
-                            if self.can_jump(r, c):
-                                jump_pieces.append((r, c))
+                    if p and self.piece_info[p]["color"] == (RED_PIECE if self.turn=="red" else BLACK_PIECE):
+                        if self.can_jump(r, c):
+                            jump_pieces.append((r, c))
 
         if piece:
-            piece_color = self.canvas.itemcget(piece, "fill")
-            if ((self.turn == 'red' and piece_color == RED_PIECE) or
-                (self.mode == "2P" and self.turn == 'black' and piece_color == BLACK_PIECE)):
-
+            info = self.piece_info[piece]
+            if info["color"] == (RED_PIECE if self.turn=="red" else BLACK_PIECE):
                 if self.mandatory_jump and jump_pieces and (row, col) not in jump_pieces:
-                    return
-
+                    return  # Must select a piece that can jump
                 if self.move_after_touch:
                     if self.selected_piece == (row, col):
                         self.selected_piece = None
@@ -93,22 +91,35 @@ class Checkers:
     def move_piece(self, row, col):
         src_row, src_col = self.selected_piece
         piece = self.board[src_row][src_col]
+        info = self.piece_info[piece]
 
         if self.valid_move(src_row, src_col, row, col):
             dr = row - src_row
             dc = col - src_col
 
+            # Jump capture
             if abs(dr) == 2 and abs(dc) == 2:
                 mid_row = src_row + dr // 2
                 mid_col = src_col + dc // 2
                 captured_piece = self.board[mid_row][mid_col]
                 self.canvas.delete(captured_piece)
                 self.board[mid_row][mid_col] = None
+                del self.piece_info[captured_piece]
 
+            # Move piece
             self.canvas.move(piece, dc*SQUARE_SIZE, dr*SQUARE_SIZE)
             self.board[row][col] = piece
             self.board[src_row][src_col] = None
 
+            # Promote to king
+            if info["color"] == RED_PIECE and row == 0:
+                info["king"] = True
+                self.canvas.itemconfig(piece, outline=KING_OUTLINE, width=3)
+            elif info["color"] == BLACK_PIECE and row == ROWS-1:
+                info["king"] = True
+                self.canvas.itemconfig(piece, outline=KING_OUTLINE, width=3)
+
+            # Chain jumps
             if abs(dr) == 2 and self.can_jump(row, col):
                 self.selected_piece = (row, col)
             else:
@@ -124,110 +135,91 @@ class Checkers:
             return False
         dr = dest_row - src_row
         dc = dest_col - src_col
-        piece_color = self.canvas.itemcget(self.board[src_row][src_col], "fill")
+        piece = self.board[src_row][src_col]
+        info = self.piece_info[piece]
+        color = info["color"]
+        king = info["king"]
 
+        # Normal move
         if abs(dr) == 1 and abs(dc) == 1:
-            if piece_color == RED_PIECE and dr == -1:
+            if king:
                 return True
-            if piece_color == BLACK_PIECE and dr == 1:
+            if color == RED_PIECE and dr == -1:
+                return True
+            if color == BLACK_PIECE and dr == 1:
                 return True
             return False
 
+        # Jump move
         if abs(dr) == 2 and abs(dc) == 2:
-            mid_row = src_row + dr // 2
-            mid_col = src_col + dc // 2
+            mid_row = src_row + dr//2
+            mid_col = src_col + dc//2
             mid_piece = self.board[mid_row][mid_col]
             if mid_piece is None:
                 return False
-            mid_color = self.canvas.itemcget(mid_piece, "fill")
-            if piece_color == RED_PIECE and mid_color == BLACK_PIECE:
+            mid_color = self.piece_info[mid_piece]["color"]
+            if color == RED_PIECE and mid_color == BLACK_PIECE:
                 return True
-            if piece_color == BLACK_PIECE and mid_color == RED_PIECE:
+            if color == BLACK_PIECE and mid_color == RED_PIECE:
+                return True
+            if king and ((color == RED_PIECE and mid_color == BLACK_PIECE) or
+                         (color == BLACK_PIECE and mid_color == RED_PIECE)):
                 return True
         return False
 
     def can_jump(self, row, col):
+        piece = self.board[row][col]
+        info = self.piece_info[piece]
         directions = [(-2, -2), (-2, 2), (2, -2), (2, 2)]
         for dr, dc in directions:
-            new_row = row + dr
-            new_col = col + dc
-            if 0 <= new_row < ROWS and 0 <= new_col < COLS:
-                if self.valid_move(row, col, new_row, new_col):
+            nr, nc = row + dr, col + dc
+            if 0 <= nr < ROWS and 0 <= nc < COLS:
+                if self.valid_move(row, col, nr, nc):
                     return True
         return False
 
+    # AI
     def ai_move(self):
-        black_pieces = []
-        for r in range(ROWS):
-            for c in range(COLS):
-                piece = self.board[r][c]
-                if piece and self.canvas.itemcget(piece, "fill") == BLACK_PIECE:
-                    black_pieces.append((r, c))
+        black_pieces = [ (r,c) for r in range(ROWS) for c in range(COLS)
+                         if self.board[r][c] and self.piece_info[self.board[r][c]]["color"]==BLACK_PIECE ]
 
         jump_pieces = [p for p in black_pieces if self.can_jump(p[0], p[1])]
         if self.mandatory_jump and jump_pieces:
             black_pieces = jump_pieces
 
         if self.difficulty == "Easy":
-            random.shuffle(black_pieces)
-            for r, c in black_pieces:
-                for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
-                    nr, nc = r+dr, c+dc
-                    if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r, c, nr, nc):
-                        self.selected_piece = (r, c)
-                        self.move_piece(nr, nc)
-                        return
-
+            self.ai_random_move(black_pieces)
         elif self.difficulty == "Medium":
-            # prioritize jumps and captures
-            moves = []
-            for r, c in black_pieces:
-                for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
-                    nr, nc = r+dr, c+dc
-                    if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r, c, nr, nc):
-                        # Simple scoring: jumps = 2 points, normal = 1
-                        score = 2 if abs(dr) == 2 else 1
-                        moves.append((score, r, c, nr, nc))
-            if moves:
-                moves.sort(reverse=True)  # highest score first
-                _, r, c, nr, nc = moves[0]
-                self.selected_piece = (r, c)
-                self.move_piece(nr, nc)
-
+            self.ai_medium(black_pieces)
         elif self.difficulty == "Adaptive":
-            # Attempt to move pieces away from potential capture
-            moves = []
-            for r, c in black_pieces:
-                for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
-                    nr, nc = r+dr, c+dc
-                    if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r, c, nr, nc):
-                        danger = self.count_threats(nr, nc)
-                        score = 2 if abs(dr) == 2 else 1
-                        moves.append((score - danger, r, c, nr, nc))
-            if moves:
-                moves.sort(reverse=True)
-                _, r, c, nr, nc = moves[0]
-                self.selected_piece = (r, c)
-                self.move_piece(nr, nc)
-
+            self.ai_adaptive(black_pieces)
         elif self.difficulty == "Hard":
-            # Evaluate moves: maximize AI captures, minimize human captures
-            best_move = None
-            best_score = -float('inf')
-            for r, c in black_pieces:
-                for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
-                    nr, nc = r+dr, c+dc
-                    if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r, c, nr, nc):
-                        score = self.evaluate_move(r, c, nr, nc)
-                        if score > best_score:
-                            best_score = score
-                            best_move = (r, c, nr, nc)
-            if best_move:
-                r, c, nr, nc = best_move
-                self.selected_piece = (r, c)
-                self.move_piece(nr, nc)
-
+            self.ai_hard(black_pieces)
         self.turn = 'red'
+
+    def ai_random_move(self, black_pieces):
+        random.shuffle(black_pieces)
+        for r, c in black_pieces:
+            for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
+                nr, nc = r+dr, c+dc
+                if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r,c,nr,nc):
+                    self.selected_piece = (r,c)
+                    self.move_piece(nr,nc)
+                    return
+
+    def ai_medium(self, black_pieces):
+        moves = []
+        for r, c in black_pieces:
+            for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
+                nr, nc = r+dr, c+dc
+                if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r,c,nr,nc):
+                    score = 2 if abs(dr)==2 else 1
+                    moves.append((score, r,c,nr,nc))
+        if moves:
+            moves.sort(reverse=True)
+            _, r,c,nr,nc = moves[0]
+            self.selected_piece = (r,c)
+            self.move_piece(nr,nc)
 
     def count_threats(self, row, col):
         threats = 0
@@ -237,23 +229,53 @@ class Checkers:
             if 0 <= r2 < ROWS and 0 <= c2 < COLS:
                 mid_piece = self.board[r1][c1]
                 dest_piece = self.board[r2][c2]
-                if mid_piece and self.canvas.itemcget(mid_piece, "fill") == RED_PIECE and dest_piece is None:
+                if mid_piece and self.piece_info[mid_piece]["color"]==RED_PIECE and dest_piece is None:
                     threats += 1
         return threats
 
-    def evaluate_move(self, r, c, nr, nc):
+    def ai_adaptive(self, black_pieces):
+        moves = []
+        for r,c in black_pieces:
+            for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
+                nr, nc = r+dr, c+dc
+                if 0<=nr<ROWS and 0<=nc<COLS and self.valid_move(r,c,nr,nc):
+                    danger = self.count_threats(nr,nc)
+                    score = 2 if abs(dr)==2 else 1
+                    moves.append((score-danger,r,c,nr,nc))
+        if moves:
+            moves.sort(reverse=True)
+            _, r,c,nr,nc = moves[0]
+            self.selected_piece = (r,c)
+            self.move_piece(nr,nc)
+
+    def evaluate_move(self, r,c,nr,nc):
         score = 0
-        # jump = +2
-        if abs(nr - r) == 2:
+        if abs(nr-r)==2:
             score += 2
-        # move to safe spot = +1
-        score += -self.count_threats(nr, nc)
+        score -= self.count_threats(nr,nc)
         return score
+
+    def ai_hard(self, black_pieces):
+        best_move = None
+        best_score = -float('inf')
+        for r,c in black_pieces:
+            for dr,dc in [(-2,-2),(-2,2),(2,-2),(2,2),(-1,-1),(-1,1),(1,-1),(1,1)]:
+                nr,nc = r+dr, c+dc
+                if 0<=nr<ROWS and 0<=nc<COLS and self.valid_move(r,c,nr,nc):
+                    score = self.evaluate_move(r,c,nr,nc)
+                    if score > best_score:
+                        best_score = score
+                        best_move = (r,c,nr,nc)
+        if best_move:
+            r,c,nr,nc = best_move
+            self.selected_piece = (r,c)
+            self.move_piece(nr,nc)
+
 
 def rule_menu():
     root = tk.Tk()
     root.title("Checkers Rules")
-    root.geometry("400x350")
+    root.geometry("400x380")
 
     mode_var = tk.StringVar(value="AI")
     difficulty_var = tk.StringVar(value="Easy")
