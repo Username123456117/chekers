@@ -1,4 +1,5 @@
 import tkinter as tk
+import random
 
 # Constants
 ROWS, COLS = 8, 8
@@ -88,6 +89,8 @@ class Checkers:
             else:
                 self.selected_piece = None
                 self.turn = 'black' if self.turn == 'red' else 'red'
+                if self.turn == 'black':
+                    self.root.after(500, self.ai_move)  # AI moves after 0.5s
             return True
         return False
 
@@ -130,6 +133,36 @@ class Checkers:
                     return True
         return False
 
+    def ai_move(self):
+        # Find all black pieces
+        black_pieces = []
+        for r in range(ROWS):
+            for c in range(COLS):
+                piece = self.board[r][c]
+                if piece and self.canvas.itemcget(piece, "fill") == BLACK_PIECE:
+                    black_pieces.append((r, c))
+
+        random.shuffle(black_pieces)  # Randomize order
+
+        for r, c in black_pieces:
+            # Try jumps first
+            for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r, c, nr, nc):
+                    self.selected_piece = (r, c)
+                    self.move_piece(nr, nc)
+                    return
+
+            # Try normal moves
+            for dr, dc in [(-1,-1), (-1,1), (1,-1), (1,1)]:
+                nr, nc = r + dr, c + dc
+                if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r, c, nr, nc):
+                    self.selected_piece = (r, c)
+                    self.move_piece(nr, nc)
+                    return
+
+        # No valid moves? pass turn
+        self.turn = 'red'
 
 if __name__ == "__main__":
     root = tk.Tk()
