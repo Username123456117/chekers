@@ -126,7 +126,7 @@ class Checkers:
                 self.selected_piece = None
                 self.turn = 'black' if self.turn == 'red' else 'red'
                 if self.mode == "AI" and self.turn == 'black':
-                    self.root.after(500, self.ai_move)
+                    self.root.after(300, self.ai_move)
             return True
         return False
 
@@ -158,13 +158,16 @@ class Checkers:
             if mid_piece is None:
                 return False
             mid_color = self.piece_info[mid_piece]["color"]
-            if color == RED_PIECE and mid_color == BLACK_PIECE:
-                return True
-            if color == BLACK_PIECE and mid_color == RED_PIECE:
-                return True
-            if king and ((color == RED_PIECE and mid_color == BLACK_PIECE) or
-                         (color == BLACK_PIECE and mid_color == RED_PIECE)):
-                return True
+            if king:
+                if (color == RED_PIECE and mid_color == BLACK_PIECE) or \
+                   (color == BLACK_PIECE and mid_color == RED_PIECE):
+                    return True
+            else:
+                # Non-king: cannot jump backward
+                if color == RED_PIECE and dr == -2 and mid_color == BLACK_PIECE:
+                    return True
+                if color == BLACK_PIECE and dr == 2 and mid_color == RED_PIECE:
+                    return True
         return False
 
     def can_jump(self, row, col):
@@ -200,26 +203,16 @@ class Checkers:
     def ai_random_move(self, black_pieces):
         random.shuffle(black_pieces)
         for r, c in black_pieces:
+            piece = self.board[r][c]
+            king = self.piece_info[piece]["king"]
             for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
+                if not king and dr < 0:  # non-king cannot move backward
+                    continue
                 nr, nc = r+dr, c+dc
                 if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r,c,nr,nc):
                     self.selected_piece = (r,c)
                     self.move_piece(nr,nc)
                     return
-
-    def ai_medium(self, black_pieces):
-        moves = []
-        for r, c in black_pieces:
-            for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
-                nr, nc = r+dr, c+dc
-                if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r,c,nr,nc):
-                    score = 2 if abs(dr)==2 else 1
-                    moves.append((score, r,c,nr,nc))
-        if moves:
-            moves.sort(reverse=True)
-            _, r,c,nr,nc = moves[0]
-            self.selected_piece = (r,c)
-            self.move_piece(nr,nc)
 
     def count_threats(self, row, col):
         threats = 0
@@ -233,25 +226,33 @@ class Checkers:
                     threats += 1
         return threats
 
-    def ai_adaptive(self, black_pieces):
+    def ai_medium(self, black_pieces):
         moves = []
-        for r,c in black_pieces:
+        for r, c in black_pieces:
+            piece = self.board[r][c]
+            king = self.piece_info[piece]["king"]
             for dr, dc in [(-2,-2), (-2,2), (2,-2), (2,2), (-1,-1), (-1,1), (1,-1), (1,1)]:
+                if not king and dr < 0:  # non-king cannot move backward
+                    continue
                 nr, nc = r+dr, c+dc
-                if 0<=nr<ROWS and 0<=nc<COLS and self.valid_move(r,c,nr,nc):
-                    danger = self.count_threats(nr,nc)
+                if 0 <= nr < ROWS and 0 <= nc < COLS and self.valid_move(r,c,nr,nc):
                     score = 2 if abs(dr)==2 else 1
-                    moves.append((score-danger,r,c,nr,nc))
+                    score -= self.count_threats(nr,nc)
+                    moves.append((score, r,c,nr,nc))
         if moves:
             moves.sort(reverse=True)
             _, r,c,nr,nc = moves[0]
             self.selected_piece = (r,c)
             self.move_piece(nr,nc)
 
+    def ai_adaptive(self, black_pieces):
+        # Considers jump + safety
+        self.ai_medium(black_pieces)  # Medium already considers threats
+
     def evaluate_move(self, r,c,nr,nc):
         score = 0
         if abs(nr-r)==2:
-            score += 2
+            score += 5  # Jump highly valued
         score -= self.count_threats(nr,nc)
         return score
 
@@ -259,7 +260,11 @@ class Checkers:
         best_move = None
         best_score = -float('inf')
         for r,c in black_pieces:
+            piece = self.board[r][c]
+            king = self.piece_info[piece]["king"]
             for dr,dc in [(-2,-2),(-2,2),(2,-2),(2,2),(-1,-1),(-1,1),(1,-1),(1,1)]:
+                if not king and dr < 0:
+                    continue
                 nr,nc = r+dr, c+dc
                 if 0<=nr<ROWS and 0<=nc<COLS and self.valid_move(r,c,nr,nc):
                     score = self.evaluate_move(r,c,nr,nc)
